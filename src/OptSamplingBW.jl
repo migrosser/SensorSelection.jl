@@ -9,7 +9,7 @@ select sensors such that the estimation of the parameter-vector `x` has minimum 
 * `m::Measurement`            - Measurement object
 * `numSamples::Vector{Int64}` - number of samples
 """
-function optSamplingBW2!(m::Measurement{T}, numSamples::Int64, Σx::Matrix{T}, numSimSamp::Int64, batch::Int64) where T
+function optSamplingBW!(m::Measurement{T}, numSamples::Int64, Σx::Matrix{T}, numSimSamp::Int64, batch::Int64) where T
   @info "optSamplingBW"
   # remove samples
   cand = collect(1:size(m.Ht,2))
