@@ -1,5 +1,15 @@
 export Measurement
 
+"""
+  data structure describing a measurement
+
+  parameters:
+  * `w::Vector{Bool}` -  msk determining which samples are measured
+  * `Ht::Array{T,3}`  -  adjoint of measurement matrices. Components stacked along 3. dim
+  * `Σy::Matrix{T}`   -  variances of the measurements. Components stacked along 2. dim
+  * `fim::Vector{Array{T,2}}` - Array containing the FIM for each measurement component
+  * `fim::Vector{Hermitian{T,Array{T,2}}}` - Array containing the IFIM for each measurement component
+"""
 mutable struct Measurement{T}
   w::Vector{Bool}
   Ht::Array{T,3}

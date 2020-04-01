@@ -55,7 +55,10 @@ function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
 end
 
 """
-  calculate the change in the trace of inverse FIM when removing a sample from the candidate set
+  `incIFIM!(δj::Vector{T}, m::Measurement{T}, cand::Vector{Int64}, tmp::Matrix{T}) where T`
+
+calculate the change in the trace of inverse FIM when removing a sample from the candidate set.
+The results are stored in the first entries of `δj`
 """
 function incIFIM!(δj::Vector{T}, m::Measurement{T}, cand::Vector{Int64}, tmp::Matrix{T}) where T
   batch = size(tmp,2)
