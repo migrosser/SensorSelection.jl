@@ -1,4 +1,4 @@
-export optSamplingBW!, removeSample!
+export optSamplingBW!
 
 """
     `optSampling!(m::Measurement, numSamples::Int64)`
@@ -9,14 +9,18 @@ select sensors such that the estimation of the parameter-vector `x` has minimum 
 * `m::Measurement`            - Measurement object
 * `numSamples::Vector{Int64}` - number of samples
 """
-function optSamplingBW!(m::Measurement{T}, numSamples::Int64, Σx::Matrix{T}, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand) where T
+# function optSamplingBW!(m::Measurement{T}, numSamples::Int64, Σx::Matrix{T}, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand) where T
+function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand) where T
   @info "optSamplingBW"
-  # remove samples
+  # candidate samples to be removed
   cand = collect(1:size(m.Ht,2))
+  # preallocate temporary arrays
   tmp = zeros(T, size(m.fim[1],1), batch)
   tmp_ifim = zeros(T, size(m.ifim[1]))
   δj = zeros(T,length(cand))
-  @showprogress 1 "Select Sensors..." for i=1:div(length(cand)-numSamples,numSimSamp)
+  # remove batches of samples
+  numBatches = div(length(cand)-numSamples,numSimSamp)
+  @showprogress 1 "Select Sensors..." for i=1:numBatches
     δj .= 0.0
     removeSamples!(m,cand,tmp,tmp_ifim,δj,numSimSamp,numCand)
   end
@@ -25,7 +29,8 @@ end
 """
   `removeSample!(w::Vector{Bool}, cand::Vector{Int64}, fim::Array{Float64,3}, Ht::Array{Float64,3},r::Matrix{Float64})`
 
-remove the sample from `cand` which minimizes maximizes the trace of the FIM (i.e. minimizes uncertainty).
+remove the sample from `cand` which minimizes the trace of the inverse FIM
+(i.e. minimizes uncertainty).
 
 # Arguments:
 * `m::Measurement`         - Measurement object
@@ -33,22 +38,21 @@ remove the sample from `cand` which minimizes maximizes the trace of the FIM (i.
 """
 function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
                       , tmp::Matrix{T}, tmp_ifim::Matrix{T}
-                      , δj::Vector{T}, numSimSamp::Int64, numCand::Int64) where T
+                      , δj::Vector{T}, numSamp::Int64, numCand::Int64) where T
   numComp = length(m.fim)
 
   # find index which yields the least increase in average variance (trace of inverse FIM)
   incIFIM!(δj,m,cand,tmp)
 
   # find the smallest elements and iteratively remove the best candidates
-  p = sortperm( real.(δj) )[1:numCand]
-  cand2 = copy( cand[p] )
-  removeSample!(m, cand2, 1, tmp[:,1], tmp_ifim)
-  for i=1:numSimSamp-1
+  p = sortperm( real.(δj[1:length(cand)]) )[1:numCand]
+  removeSample!(m, cand, 1, p, tmp[:,1], tmp_ifim)
+  for i=1:numSamp-1
     # re-estimate the changes in uncertainty
-    incIFIM!(δj, m, cand2, tmp)
+    incIFIM!(δj, m, cand[p], tmp)
     # remove least informative sample
-    δfim, idx = findmin(real.(δj[1:length(cand2)]))
-    removeSample!(m, cand2, idx, tmp[:,1], tmp_ifim)
+    δfim, idx = findmin(real.(δj[1:length(p)]))
+    removeSample!(m, cand, idx, p, tmp[:,1], tmp_ifim)
   end
 
   return nothing
@@ -86,21 +90,24 @@ function incIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T
   end
 end
 
-function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64,tmp::Vector{T},tmp_ifim::Matrix{T}) where T
+function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T}) where T
   numComp = length(m.fim)
+  p_i = p[idx]
   # update samplig scheme
-  m.w[cand[idx]] = 0
+  m.w[cand[p_i]] = 0
   # update FIM
   for k=1:numComp
-    m.fim[k] .-= 1.0/m.Σy[cand[idx],k] .* m.Ht[:,cand[idx],k]*adjoint(m.Ht[:,cand[idx],k])
+    m.fim[k] .-= 1.0/m.Σy[cand[p_i],k] .* m.Ht[:,cand[p_i],k]*adjoint(m.Ht[:,cand[p_i],k])
   end
   # update IFIM
   for k=1:numComp
-    mul!(tmp, m.ifim[k], m.Ht[:,cand[idx],k])
-    denom = m.Σy[cand[idx],k]-dot( m.Ht[:,cand[idx],k],tmp )
+    mul!(tmp, m.ifim[k], m.Ht[:,cand[p_i],k])
+    denom = m.Σy[cand[p_i],k]-dot( m.Ht[:,cand[p_i],k],tmp )
     tmp_ifim .= tmp*adjoint(tmp) ./ denom
     m.ifim[k] += Hermitian(0.5*(tmp_ifim.+adjoint(tmp_ifim)))
   end
   # remove sample from candidate set
-  deleteat!(cand,idx)
+  deleteat!(cand,p_i)
+  p[findall(x->x>p_i,p)] .-=1
+  deleteat!(p,idx)
 end
