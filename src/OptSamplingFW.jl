@@ -13,9 +13,12 @@ function optSamplingFW!(m::Measurement{T}, numSamples::Int64, batch::Int64=1) wh
   cand = collect(1:size(m.Ht,2))
   tmp = zeros(T,size(m.fim[1],1),batch)
   δj = zeros(T,length(cand))
+  wlog = Int64[]
   @showprogress 1 "Select Sensors..." for i=1:numSamples
-    addSample!(m,cand,tmp,δj)
+    addSample!(m,cand,tmp,δj,wlog)
   end
+  m.w[wlog] .= 1
+  return wlog
 end
 
 """
@@ -27,7 +30,7 @@ adds the sample from `cand` which minimizes maximizes the trace of the FIM (i.e.
 * `m::Measurement`         - Measurement object
 * `cand::Vector{Int64}`    - candidate samples
 """
-function addSample!(m::Measurement{T}, cand::Vector{Int64}, tmp::Matrix{T}, δj::Vector{T}) where T
+function addSample!(m::Measurement{T}, cand::Vector{Int64}, tmp::Matrix{T}, δj::Vector{T}, wlog::Vector{Int64}) where T
   # inverse of current FIMs
   numComp = length(m.fim)
   for k=1:numComp
@@ -39,7 +42,7 @@ function addSample!(m::Measurement{T}, cand::Vector{Int64}, tmp::Matrix{T}, δj:
   δfim, idx = findmax(real.(δj[1:length(cand)]))
 
   # add the corresponding sample
-  addSample!(m, cand, idx)
+  addSample!(m, cand, idx, wlog)
 
   return nothing
 end
@@ -76,10 +79,10 @@ function redIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T
   end
 end
 
-function addSample!(m::Measurement{T}, cand::Vector{Int64}, idx::Int64) where T
+function addSample!(m::Measurement{T}, cand::Vector{Int64}, idx::Int64, wlog::Vector{Int64}) where T
   numComp = length(m.fim)
-  # update samplig scheme
-  m.w[cand[idx]] = 1
+  # update samplig log
+  push!(wlog,cand[idx])
   # update FIM
   for k=1:numComp
     m.fim[k] .+= 1.0/m.Σy[cand[idx],k] .* m.Ht[:,cand[idx],k]*adjoint(m.Ht[:,cand[idx],k])

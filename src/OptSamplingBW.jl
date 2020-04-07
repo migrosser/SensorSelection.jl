@@ -20,10 +20,14 @@ function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64,
   δj = zeros(T,length(cand))
   # remove batches of samples
   numBatches = div(length(cand)-numSamples,numSimSamp)
+  wlog = Int64[]
   @showprogress 1 "Select Sensors..." for i=1:numBatches
     δj .= 0.0
-    removeSamples!(m,cand,tmp,tmp_ifim,δj,numSimSamp,numCand)
+    removeSamples!(m,cand,tmp,tmp_ifim,δj,numSimSamp,numCand,wlog)
   end
+  # remove samples from m.w
+  m.w[wlog] .= 0
+  return wlog
 end
 
 """
@@ -38,7 +42,7 @@ remove the sample from `cand` which minimizes the trace of the inverse FIM
 """
 function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
                       , tmp::Matrix{T}, tmp_ifim::Matrix{T}
-                      , δj::Vector{T}, numSamp::Int64, numCand::Int64) where T
+                      , δj::Vector{T}, numSamp::Int64, numCand::Int64,wlog::Vector{Int64}) where T
   numComp = length(m.fim)
 
   # find index which yields the least increase in average variance (trace of inverse FIM)
@@ -46,13 +50,13 @@ function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
 
   # find the smallest elements and iteratively remove the best candidates
   p = sortperm( real.(δj[1:length(cand)]) )[1:numCand]
-  removeSample!(m, cand, 1, p, tmp[:,1], tmp_ifim)
+  removeSample!(m, cand, 1, p, tmp[:,1], tmp_ifim, wlog)
   for i=1:numSamp-1
     # re-estimate the changes in uncertainty
     incIFIM!(δj, m, cand[p], tmp)
     # remove least informative sample
     δfim, idx = findmin(real.(δj[1:length(p)]))
-    removeSample!(m, cand, idx, p, tmp[:,1], tmp_ifim)
+    removeSample!(m, cand, idx, p, tmp[:,1], tmp_ifim, wlog)
   end
 
   return nothing
@@ -90,11 +94,11 @@ function incIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T
   end
 end
 
-function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T}) where T
+function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T},wlog::Vector{Int64}) where T
   numComp = length(m.fim)
   p_i = p[idx]
-  # update samplig scheme
-  m.w[cand[p_i]] = 0
+  # update samplig log
+  push!(wlog,cand[p_i])
   # update FIM
   for k=1:numComp
     m.fim[k] .-= 1.0/m.Σy[cand[p_i],k] .* m.Ht[:,cand[p_i],k]*adjoint(m.Ht[:,cand[p_i],k])

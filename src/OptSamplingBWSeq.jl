@@ -20,12 +20,20 @@ function optSamplingBW!(m::SeqMeasurement{T}, numSamples::Int64, numSimSamp::Int
   # remove batches of samples
   numBatches = div(length(cand[1])-numSamples,numSimSamp)
   numComp = size(m.w,2)
+  # store deleted indices in log
+  wlog = [Int64[] for k=1:size(m.w,2)]
   @showprogress 1 "Select Sensors..." for i=1:numBatches
     δj .= 0.0
+    p = shuffle(collect(1:numComp))
     for k=1:numComp
-      removeSamples!(m,k,cand[k],tmp,tmp_ifim,δj,numSimSamp,numCand)
+      removeSamples!(m,p[k],cand[p[k]],tmp,tmp_ifim,δj,numSimSamp,numCand,wlog[k])
     end
   end
+  # remove samples from m.w
+  for k=1:numComp
+      m.w[wlog[k],k] .=0
+  end
+  return wlog
 end
 
 """
@@ -41,7 +49,7 @@ Samples are chosen such that the trace of the inverse FIM is minimized
 """
 function removeSamples!(m::SeqMeasurement{T}, k::Int64, cand::Vector{Int64}
                       , tmp::Matrix{T}, tmp_ifim::Matrix{T}
-                      , δj::Vector{T}, numSamp::Int64, numCand::Int64) where T
+                      , δj::Vector{T}, numSamp::Int64, numCand::Int64,wlog::Vector{Int64}) where T
   numComp = length(m.fim)
 
   # find index which yields the least increase in average variance (trace of inverse FIM)
@@ -49,13 +57,13 @@ function removeSamples!(m::SeqMeasurement{T}, k::Int64, cand::Vector{Int64}
 
   # find the smallest elements and iteratively remove the best candidates
   p = sortperm( real.(δj[1:length(cand)]) )[1:numCand]
-  removeSample!(m, k, cand, 1, p, tmp[:,1], tmp_ifim)
+  removeSample!(m, k, cand, 1, p, tmp[:,1], tmp_ifim, wlog)
   for i=1:numSamp-1
     # re-estimate the changes in uncertainty
     incIFIM!(k, δj, m, cand[p], tmp)
     # remove least informative sample
     δfim, idx = findmin(real.(δj[1:length(p)]))
-    removeSample!(m, k, cand, idx, p, tmp[:,1], tmp_ifim)
+    removeSample!(m, k, cand, idx, p, tmp[:,1], tmp_ifim, wlog)
   end
 
   return nothing
@@ -91,10 +99,10 @@ function incIFIMBatchSeq!(δ::U, ifim::Hermitian{T,Array{T,2}}, Ht::Matrix{T}, �
   δ .+= ddot(tmp)./( Σy .- ddot(Ht,tmp) )
 end
 
-function removeSample!(m::SeqMeasurement{T}, k::Int64, cand::Vector{Int64},idx::Int64,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T}) where T
+function removeSample!(m::SeqMeasurement{T}, k::Int64, cand::Vector{Int64},idx::Int64,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T},wlog::Vector{Int64}) where T
   p_i = p[idx]
-  # update samplig scheme
-  m.w[cand[p_i],k] = 0
+  # update samplig log
+  push!(wlog,cand[p_i])
   # update FIM
   m.fim .-= 1.0/m.Σy[cand[p_i],k] .* m.Ht[:,cand[p_i],k]*adjoint(m.Ht[:,cand[p_i],k])
   # update IFIM
