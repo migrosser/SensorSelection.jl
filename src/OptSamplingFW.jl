@@ -9,20 +9,24 @@ select sensors such that the estimation of the parameter-vector `x` has minimum 
 * `m::Measurement`            - Measurement object
 * `numSamples::Vector{Int64}` - number of samples
 """
-function optSamplingFW!(m::Measurement{T}, numSamples::Int64, batch::Int64=1) where T
+function optSamplingFW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand) where T
   cand = collect(1:size(m.Ht,2))
-  tmp = zeros(T,size(m.fim[1],1),batch)
+  tmp = zeros(T, size(m.fim[1],1), batch)
   δj = zeros(T,length(cand))
+  # remove batches of samples
+  numBatches = div(numSamples,numSimSamp)
   wlog = Int64[]
-  @showprogress 1 "Select Sensors..." for i=1:numSamples
-    addSample!(m,cand,tmp,δj,wlog)
+  @showprogress 1 "Select Sensors..." for i=1:numBatches
+    nSamp = min(length(cand),numSimSamp)
+    nCand = min(length(cand),numCand)
+    addSamples!(m,cand,tmp,δj,nSamp,nCand,wlog)
   end
   m.w[wlog] .= 1
   return wlog
 end
 
 """
-  `addSample!(w::Vector{Bool}, cand::Vector{Int64}, fim::Array{Float64,3}, Ht::Array{Float64,3},r::Matrix{Float64})`
+  `addSamples!(w::Vector{Bool}, cand::Vector{Int64}, fim::Array{Float64,3}, Ht::Array{Float64,3},r::Matrix{Float64})`
 
 adds the sample from `cand` which minimizes maximizes the trace of the FIM (i.e. minimizes uncertainty).
 
@@ -30,19 +34,24 @@ adds the sample from `cand` which minimizes maximizes the trace of the FIM (i.e.
 * `m::Measurement`         - Measurement object
 * `cand::Vector{Int64}`    - candidate samples
 """
-function addSample!(m::Measurement{T}, cand::Vector{Int64}, tmp::Matrix{T}, δj::Vector{T}, wlog::Vector{Int64}) where T
-  # inverse of current FIMs
+function addSamples!(m::Measurement{T}, cand::Vector{Int64}
+                      , tmp::Matrix{T}, δj::Vector{T}
+                      , numSamp::Int64, numCand::Int64,wlog::Vector{Int64}) where T
   numComp = length(m.fim)
-  for k=1:numComp
-    m.ifim[k] = Hermitian(inv(m.fim[k]))
-  end
 
-  # find index which yields the largest reduction in average variance (trace of inverse FIM)
+  # find index which yields the least increase in average variance (trace of inverse FIM)
   redIFIM!(δj,m,cand,tmp)
-  δfim, idx = findmax(real.(δj[1:length(cand)]))
 
-  # add the corresponding sample
-  addSample!(m, cand, idx, wlog)
+  # find the smallest elements and iteratively remove the best candidates
+  p = sortperm( real.(δj[1:length(cand)]), rev=true )[1:numCand]
+  addSample!(m, cand, 1, p, tmp[:,1], wlog)
+  for i=1:numSamp-1
+    # re-estimate the changes in uncertainty
+    redIFIM!(δj, m, cand[p], tmp)
+    # remove least informative sample
+    δfim, idx = findmax(real.(δj[1:length(p)]))
+    addSample!(m, cand, idx, p, tmp[:,1], wlog)
+  end
 
   return nothing
 end
@@ -79,14 +88,21 @@ function redIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T
   end
 end
 
-function addSample!(m::Measurement{T}, cand::Vector{Int64}, idx::Int64, wlog::Vector{Int64}) where T
+function addSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64,p::Vector{Int64},tmp::Vector{T},wlog::Vector{Int64}) where T
   numComp = length(m.fim)
+  p_i = p[idx]
   # update samplig log
-  push!(wlog,cand[idx])
+  push!(wlog,cand[p_i])
   # update FIM
   for k=1:numComp
-    m.fim[k] .+= 1.0/m.Σy[cand[idx],k] .* m.Ht[:,cand[idx],k]*adjoint(m.Ht[:,cand[idx],k])
+    m.fim[k] .+= 1.0/m.Σy[cand[p_i],k] .* m.Ht[:,cand[p_i],k]*adjoint(m.Ht[:,cand[p_i],k])
+  end
+  # update IFIM
+  for k=1:numComp
+    m.ifim[k] = Hermitian(inv(m.fim[k]))
   end
   # remove sample from candidate set
-  deleteat!(cand,idx)
+  deleteat!(cand,p_i)
+  p[findall(x->x>p_i,p)] .-=1
+  deleteat!(p,idx)
 end

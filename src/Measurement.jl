@@ -59,3 +59,19 @@ function Measurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Matrix{T},w::Vector{Bo
 
   return Measurement(w, Ht, Σy, fim, ifim)
 end
+
+function Measurement(Ht::Array{T,3}, Σy::Matrix{T}, Φ::Array{T,3}, Σx::Matrix{T}, w::Vector{Bool};diagFIM::Bool=false) where T
+  numCand = size(Ht,2)
+  fim = calculateFIM(Σx,Φ,Σy,Ht,w)
+  ifim = [ Hermitian(zeros(T,size(fim[1],1),size(fim[1],2))) for k=1:length(fim) ]
+  for k=1:length(fim)
+    if diagFIM
+      fimDiag = diagm(diag(fim[k]))
+      ifim[k] = Hermitian(inv(fimDiag))
+    else
+      ifim[k] = Hermitian(inv(fim[k]))
+    end
+  end
+
+  return Measurement(w, Ht, Σy, fim, ifim)
+end
