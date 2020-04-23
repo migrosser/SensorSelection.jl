@@ -9,8 +9,7 @@ select sensors such that the estimation of the parameter-vector `x` has minimum 
 * `m::Measurement`            - Measurement object
 * `numSamples::Vector{Int64}` - number of samples
 """
-# function optSamplingBW!(m::Measurement{T}, numSamples::Int64, Σx::Matrix{T}, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand) where T
-function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand) where T
+function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand; numericInv::Bool=false) where T
   @info "optSamplingBW"
   # candidate samples to be removed
   cand = collect(1:size(m.Ht,2))
@@ -23,7 +22,7 @@ function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64,
   wlog = Int64[]
   @showprogress 1 "Select Sensors..." for i=1:numBatches
     δj .= 0.0
-    removeSamples!(m,cand,tmp,tmp_ifim,δj,numSimSamp,numCand,wlog)
+    removeSamples!(m,cand,tmp,tmp_ifim,δj,numSimSamp,numCand,wlog,numericInv=numericInv)
   end
   # remove samples from m.w
   m.w[wlog] .= 0
@@ -42,7 +41,7 @@ remove the sample from `cand` which minimizes the trace of the inverse FIM
 """
 function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
                       , tmp::Matrix{T}, tmp_ifim::Matrix{T}
-                      , δj::Vector{T}, numSamp::Int64, numCand::Int64,wlog::Vector{Int64}) where T
+                      , δj::Vector{T}, numSamp::Int64, numCand::Int64,wlog::Vector{Int64}; numericInv::Bool=false) where T
   numComp = length(m.fim)
 
   # find index which yields the least increase in average variance (trace of inverse FIM)
@@ -50,13 +49,13 @@ function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
 
   # find the smallest elements and iteratively remove the best candidates
   p = sortperm( real.(δj[1:length(cand)]) )[1:numCand]
-  removeSample!(m, cand, 1, p, tmp[:,1], tmp_ifim, wlog)
+  removeSample!(m, cand, 1, p, tmp[:,1], tmp_ifim, wlog, numericInv=numericInv)
   for i=1:numSamp-1
     # re-estimate the changes in uncertainty
     incIFIM!(δj, m, cand[p], tmp)
     # remove least informative sample
     δfim, idx = findmin(real.(δj[1:length(p)]))
-    removeSample!(m, cand, idx, p, tmp[:,1], tmp_ifim, wlog)
+    removeSample!(m, cand, idx, p, tmp[:,1], tmp_ifim, wlog, numericInv=numericInv)
   end
 
   return nothing
@@ -94,7 +93,9 @@ function incIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T
   end
 end
 
-function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T},wlog::Vector{Int64}) where T
+function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64
+                      ,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T}
+                      ,wlog::Vector{Int64}; numericInv::Bool=false) where T
   numComp = length(m.fim)
   p_i = p[idx]
   # update samplig log
@@ -104,11 +105,17 @@ function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64,p::Vect
     m.fim[k] .-= 1.0/m.Σy[cand[p_i],k] .* m.Ht[:,cand[p_i],k]*adjoint(m.Ht[:,cand[p_i],k])
   end
   # update IFIM
-  for k=1:numComp
-    mul!(tmp, m.ifim[k], m.Ht[:,cand[p_i],k])
-    denom = m.Σy[cand[p_i],k]-dot( m.Ht[:,cand[p_i],k],tmp )
-    tmp_ifim .= tmp*adjoint(tmp) ./ denom
-    m.ifim[k] += Hermitian(0.5*(tmp_ifim.+adjoint(tmp_ifim)))
+  if numericInv
+    for k=1:numComp
+        m.ifim[k] = Hermitian(inv(m.fim[k]))
+    end
+  else
+    for k=1:numComp
+      mul!(tmp, m.ifim[k], m.Ht[:,cand[p_i],k])
+      denom = m.Σy[cand[p_i],k]-dot( m.Ht[:,cand[p_i],k],tmp )
+      tmp_ifim .= tmp*adjoint(tmp) ./ denom
+      m.ifim[k] += Hermitian(0.5*(tmp_ifim.+adjoint(tmp_ifim)))
+    end
   end
   # remove sample from candidate set
   deleteat!(cand,p_i)
