@@ -5,8 +5,10 @@ using LinearAlgebra, ProgressMeter, Random
 include("Utils.jl")
 include("FIM.jl")
 include("Measurement.jl")
+# include("Measurement2.jl")
 include("SeqMeasurement.jl")
 include("OptSamplingFW.jl")
+# include("OptSamplingFW2.jl")
 include("OptSamplingBW.jl")
 include("OptSamplingBWSeq.jl")
 

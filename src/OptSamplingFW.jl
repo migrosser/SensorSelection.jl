@@ -12,7 +12,6 @@ select sensors such that the estimation of the parameter-vector `x` has minimum 
 function optSamplingFW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand; numericInv::Bool=false) where T
   cand = collect(1:size(m.Ht,2))
   tmp = zeros(T, size(m.fim[1],1), batch)
-  tmp_ifim = zeros(T, size(m.ifim[1]))
   δj = zeros(T,length(cand))
   # remove batches of samples
   numBatches = div(numSamples,numSimSamp)
@@ -21,7 +20,7 @@ function optSamplingFW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64,
     nSamp = min(length(cand),numSimSamp)
     nCand = min(length(cand),numCand)
     # addSamples!(m,cand,tmp,δj,nSamp,nCand,wlog)
-    addSamples!(m,cand,tmp,tmp_ifim,δj,nSamp,nCand,wlog,numericInv=numericInv)
+    addSamples!(m,cand,tmp,δj,nSamp,nCand,wlog,numericInv=numericInv)
   end
   m.w[wlog] .= 1
   return wlog
@@ -37,7 +36,7 @@ adds the sample from `cand` which minimizes maximizes the trace of the FIM (i.e.
 * `cand::Vector{Int64}`    - candidate samples
 """
 function addSamples!(m::Measurement{T}, cand::Vector{Int64}
-                      , tmp::Matrix{T}, tmp_ifim::Matrix{T}, δj::Vector{T}
+                      , tmp::Matrix{T}, δj::Vector{T}
                       , numSamp::Int64, numCand::Int64,wlog::Vector{Int64}; numericInv::Bool=false) where T
   numComp = length(m.fim)
 
@@ -46,15 +45,13 @@ function addSamples!(m::Measurement{T}, cand::Vector{Int64}
 
   # find the smallest elements and iteratively remove the best candidates
   p = sortperm( real.(δj[1:length(cand)]), rev=true )[1:numCand]
-  # addSample!(m, cand, 1, p, tmp[:,1], wlog)
-  addSample!(m, cand, 1, p, tmp[:,1], tmp_ifim, wlog, numericInv=numericInv)
+  addSample!(m, cand, 1, p, tmp[:,1], wlog, numericInv=numericInv)
   for i=1:numSamp-1
     # re-estimate the changes in uncertainty
     redIFIM!(δj, m, cand[p], tmp)
     # remove least informative sample
     δfim, idx = findmax(real.(δj[1:length(p)]))
-    # addSample!(m, cand, idx, p, tmp[:,1], wlog)
-    addSample!(m, cand, idx, p, tmp[:,1], tmp_ifim, wlog, numericInv=numericInv)
+    addSample!(m, cand, idx, p, tmp[:,1], wlog, numericInv=numericInv)
   end
 
   return nothing
@@ -84,7 +81,7 @@ function redIFIM!(δj::Vector{T}, m::Measurement{T}, cand::Vector{Int64}, tmp::M
   end
 end
 
-function redIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T,3}, Σy::Matrix{T}, tmp::Matrix{T}) where U<:AbstractVector{T} where T
+function redIFIMBatch!(δ::U, ifim::Vector{Matrix{T}}, Ht::Array{T,3}, Σy::Matrix{T}, tmp::Matrix{T}) where U<:AbstractVector{T} where T
   # add contributions for all components
   for k=1:length(ifim)
     mul!(tmp, ifim[k], Ht[:,:,k])
@@ -93,7 +90,7 @@ function redIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T
 end
 
 function addSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64
-                    ,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T}
+                    ,p::Vector{Int64},tmp::Vector{T}
                     ,wlog::Vector{Int64}; numericInv::Bool=false) where T
   numComp = length(m.fim)
   p_i = p[idx]
@@ -106,14 +103,13 @@ function addSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64
   # update IFIM
   if numericInv
     for k=1:numComp
-        m.ifim[k] = Hermitian(inv(m.fim[k]))
+        m.ifim[k] = inv(m.fim[k])
     end
   else
     for k=1:numComp
       mul!(tmp, m.ifim[k], m.Ht[:,cand[p_i],k])
       denom = m.Σy[cand[p_i],k]+dot( m.Ht[:,cand[p_i],k],tmp )
-      tmp_ifim .= tmp*adjoint(tmp) ./ denom
-      m.ifim[k] -= Hermitian(tmp_ifim) #Hermitian(0.5*(tmp_ifim.+adjoint(tmp_ifim)))
+      m.ifim[k] .-= tmp*adjoint(tmp) ./ denom
     end
   end
   # remove sample from candidate set

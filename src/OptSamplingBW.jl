@@ -15,14 +15,13 @@ function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64,
   cand = collect(1:size(m.Ht,2))
   # preallocate temporary arrays
   tmp = zeros(T, size(m.fim[1],1), batch)
-  tmp_ifim = zeros(T, size(m.ifim[1]))
   δj = zeros(T,length(cand))
   # remove batches of samples
   numBatches = div(length(cand)-numSamples,numSimSamp)
   wlog = Int64[]
   @showprogress 1 "Select Sensors..." for i=1:numBatches
     δj .= 0.0
-    removeSamples!(m,cand,tmp,tmp_ifim,δj,numSimSamp,numCand,wlog,numericInv=numericInv)
+    removeSamples!(m,cand,tmp,δj,numSimSamp,numCand,wlog,numericInv=numericInv)
   end
   # remove samples from m.w
   m.w[wlog] .= 0
@@ -40,7 +39,7 @@ remove the sample from `cand` which minimizes the trace of the inverse FIM
 * `cand::Vector{Int64}`    - candidate samples
 """
 function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
-                      , tmp::Matrix{T}, tmp_ifim::Matrix{T}
+                      , tmp::Matrix{T}
                       , δj::Vector{T}, numSamp::Int64, numCand::Int64,wlog::Vector{Int64}; numericInv::Bool=false) where T
   numComp = length(m.fim)
 
@@ -49,13 +48,13 @@ function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
 
   # find the smallest elements and iteratively remove the best candidates
   p = sortperm( real.(δj[1:length(cand)]) )[1:numCand]
-  removeSample!(m, cand, 1, p, tmp[:,1], tmp_ifim, wlog, numericInv=numericInv)
+  removeSample!(m, cand, 1, p, tmp[:,1], wlog, numericInv=numericInv)
   for i=1:numSamp-1
     # re-estimate the changes in uncertainty
     incIFIM!(δj, m, cand[p], tmp)
     # remove least informative sample
     δfim, idx = findmin(real.(δj[1:length(p)]))
-    removeSample!(m, cand, idx, p, tmp[:,1], tmp_ifim, wlog, numericInv=numericInv)
+    removeSample!(m, cand, idx, p, tmp[:,1], wlog, numericInv=numericInv)
   end
 
   return nothing
@@ -85,7 +84,7 @@ function incIFIM!(δj::Vector{T}, m::Measurement{T}, cand::Vector{Int64}, tmp::M
   end
 end
 
-function incIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T,3}, Σy::Matrix{T}, tmp::Matrix{T}) where U<:AbstractVector{T} where T
+function incIFIMBatch!(δ::U, ifim::Vector{Matrix{T}}, Ht::Array{T,3}, Σy::Matrix{T}, tmp::Matrix{T}) where U<:AbstractVector{T} where T
   # add contributions for all components
   for k=1:length(ifim)
     mul!(tmp, ifim[k], Ht[:,:,k])
@@ -94,7 +93,7 @@ function incIFIMBatch!(δ::U, ifim::Vector{Hermitian{T,Array{T,2}}}, Ht::Array{T
 end
 
 function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64
-                      ,p::Vector{Int64},tmp::Vector{T},tmp_ifim::Matrix{T}
+                      ,p::Vector{Int64},tmp::Vector{T}
                       ,wlog::Vector{Int64}; numericInv::Bool=false) where T
   numComp = length(m.fim)
   p_i = p[idx]
@@ -107,14 +106,13 @@ function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64
   # update IFIM
   if numericInv
     for k=1:numComp
-        m.ifim[k] = Hermitian(inv(m.fim[k]))
+        m.ifim[k] = inv(m.fim[k])
     end
   else
     for k=1:numComp
       mul!(tmp, m.ifim[k], m.Ht[:,cand[p_i],k])
       denom = m.Σy[cand[p_i],k]-dot( m.Ht[:,cand[p_i],k],tmp )
-      tmp_ifim .= tmp*adjoint(tmp) ./ denom
-      m.ifim[k] += Hermitian(0.5*(tmp_ifim.+adjoint(tmp_ifim)))
+      m.ifim[k] .+= tmp*adjoint(tmp) ./ denom
     end
   end
   # remove sample from candidate set

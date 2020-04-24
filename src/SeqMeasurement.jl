@@ -15,14 +15,14 @@ mutable struct SeqMeasurement{T}
   Ht::Array{T,3}
   Σy::Matrix{T}
   fim::Array{T,2}
-  ifim::Hermitian{T,Array{T,2}}
+  ifim::Matrix{T}
 end
 
 function SeqMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Matrix{T}) where T
   numPar, numCand, numMeas = size(Ht)
   w = zeros(Bool,numCand, numMeas)
   fim = initFIM(Σx)
-  ifim = Hermitian( zeros(T,size(fim)) )
+  ifim = zeros(T,size(fim))
 
   return SeqMeasurement(w, Ht, Σy, fim, ifim)
 end
@@ -30,7 +30,7 @@ end
 function SeqMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T},w::Matrix{Bool}) where T
   numPar, numCand, numMeas = size(Ht)
   fim = calculateFIM(reshape(Σx,:,1), reshape(Σy,:,1),reshape(Ht,numPar,numCand*numMeas,1),vec(w))[1]
-  ifim= Hermitian(inv(fim))
+  ifim= inv(fim)
 
   return SeqMeasurement(w, Ht, Σy, fim, ifim)
 end
