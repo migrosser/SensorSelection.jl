@@ -9,7 +9,9 @@ select sensors such that the estimation of the parameter-vector `x` has minimum 
 * `m::Measurement`            - Measurement object
 * `numSamples::Vector{Int64}` - number of samples
 """
-function optSamplingFW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand; numericInv::Bool=false) where T
+function optSamplingFW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64
+                        , numCand::Int64, batch::Int64=numCand
+                        ; numericInv::Bool=false, measCost::Vector{Float64}=Float64[]) where T
   cand = collect(1:size(m.Ht,2))
   tmp = zeros(T, size(m.fim[1],1), batch)
   δj = zeros(T,length(cand))
@@ -20,7 +22,7 @@ function optSamplingFW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64,
     nSamp = min(length(cand),numSimSamp)
     nCand = min(length(cand),numCand)
     # addSamples!(m,cand,tmp,δj,nSamp,nCand,wlog)
-    addSamples!(m,cand,tmp,δj,nSamp,nCand,wlog,numericInv=numericInv)
+    addSamples!(m,cand,tmp,δj,nSamp,nCand,wlog,numericInv=numericInv,measCost=measCost)
   end
   m.w[wlog] .= 1
   return wlog
@@ -37,19 +39,27 @@ adds the sample from `cand` which minimizes maximizes the trace of the FIM (i.e.
 """
 function addSamples!(m::Measurement{T}, cand::Vector{Int64}
                       , tmp::Matrix{T}, δj::Vector{T}
-                      , numSamp::Int64, numCand::Int64,wlog::Vector{Int64}; numericInv::Bool=false) where T
+                      , numSamp::Int64, numCand::Int64,wlog::Vector{Int64}
+                      ; numericInv::Bool=false, measCost::Vector{Float64}=Float64[]) where T
   numComp = length(m.fim)
 
-  # find index which yields the least increase in average variance (trace of inverse FIM)
+  # find index which yields the largest decrease in average variance (trace of inverse FIM)
   redIFIM!(δj,m,cand,tmp)
+  # add regularization (measCost)
+  if !isempty(measCost)
+    δj[1:length(cand)] .-= measCost[cand]
+  end
 
-  # find the smallest elements and iteratively remove the best candidates
+  # find the largest elements and iteratively add the best candidates
   p = sortperm( real.(δj[1:length(cand)]), rev=true )[1:numCand]
   addSample!(m, cand, 1, p, tmp[:,1], wlog, numericInv=numericInv)
   for i=1:numSamp-1
     # re-estimate the changes in uncertainty
     redIFIM!(δj, m, cand[p], tmp)
-    # remove least informative sample
+    if !isempty(measCost)
+      δj[1:length(p)] .-= measCost[cand[p]]
+    end
+    # add most informative sample
     δfim, idx = findmax(real.(δj[1:length(p)]))
     addSample!(m, cand, idx, p, tmp[:,1], wlog, numericInv=numericInv)
   end
