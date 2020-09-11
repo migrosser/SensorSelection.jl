@@ -26,11 +26,19 @@ function Measurement(Ht::Array{T,3}, Σy::Matrix{T}, fim::Array{T,3}) where T
   return Measurement(w, Ht, Σy, fim, ifim)
 end
 
-function Measurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Matrix{T}) where T
+function Measurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Matrix{T};diagFIM::Bool=false) where T
   numCand = size(Ht,2)
   w = zeros(Bool,numCand)
   fim = initFIM(Σx)
   ifim = [ zeros(T,size(fim[1],1),size(fim[1],2)) for k=1:length(fim) ]
+  for k=1:length(fim)
+    if diagFIM
+      fimDiag = Diagonal(diag(fim[k]))
+      ifim[k] .= inv(fimDiag)
+    else
+      ifim[k] .= inv(fim[k])
+    end
+  end
 
   return Measurement(w, Ht, Σy, fim, ifim)
 end
@@ -40,6 +48,14 @@ function Measurement(Ht::Array{T,3}, Σy::Matrix{T}, Φ::Array{T,3}, Σx::Matrix
   w = zeros(Bool,numCand)
   fim = initFIM(Φ,Σx)
   ifim = [ zeros(T,size(fim[1],1),size(fim[1],2)) for k=1:length(fim) ]
+  for k=1:length(fim)
+    if diagFIM
+      fimDiag = Diagonal(diag(fim[k]))
+      ifim[k] .= inv(fimDiag)
+    else
+      ifim[k] .= inv(fim[k])
+    end
+  end
 
   return Measurement(w, Ht, Σy, fim, ifim)
 end
@@ -50,10 +66,10 @@ function Measurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Matrix{T},w::Vector{Bo
   ifim = [ zeros(T,size(fim[1],1),size(fim[1],2)) for k=1:length(fim) ]
   for k=1:length(fim)
     if diagFIM
-      fimDiag = diagm(diag(fim[k]))
-      ifim[k] = inv(fimDiag)
+      fimDiag = Diagonal(diag(fim[k]))
+      ifim[k] .= inv(fimDiag)
     else
-      ifim[k] = inv(fim[k])
+      ifim[k] .= inv(fim[k])
     end
   end
 
@@ -66,10 +82,10 @@ function Measurement(Ht::Array{T,3}, Σy::Matrix{T}, Φ::Array{T,3}, Σx::Matrix
   ifim = [ zeros(T,size(fim[1],1),size(fim[1],2)) for k=1:length(fim) ]
   for k=1:length(fim)
     if diagFIM
-      fimDiag = diagm(diag(fim[k]))
-      ifim[k] = inv(fimDiag)
+      fimDiag = Diagonal(diag(fim[k]))
+      ifim[k] .= inv(fimDiag)
     else
-      ifim[k] = inv(fim[k])
+      ifim[k] .= inv(fim[k])
     end
   end
 
