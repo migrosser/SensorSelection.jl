@@ -81,13 +81,13 @@ function redIFIM!(δj::Vector{T}, m::Measurement{T}, cand::Vector{Int64}, tmp::M
     x0 = (j-1)*batch+1
     x1 = j*batch
     δjb = @view δj[x0:x1]
-    redIFIMBatch!(δjb, m.ifim, m.Ht[:,cand[x0:x1],:], m.Σy[x0:x1,:], tmp)
+    redIFIMBatch!(δjb, m.ifim, m.Ht[:,cand[x0:x1],:], m.Σy[cand[x0:x1],:], tmp)
   end
   if nprod*batch+1 <= length(cand)
     x0 = nprod*batch+1
     x1 = length(cand)
     δjb = @view δj[x0:x1]
-    redIFIMBatch!(δjb, m.ifim, m.Ht[:,cand[x0:x1],:], m.Σy[x0:x1,:], tmp[:,1:x1-x0+1])
+    redIFIMBatch!(δjb, m.ifim, m.Ht[:,cand[x0:x1],:], m.Σy[cand[x0:x1],:], tmp[:,1:x1-x0+1])
   end
 end
 
