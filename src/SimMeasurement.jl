@@ -54,3 +54,20 @@ function SimMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T}; diagFIM:
 
   return SimMeasurement(w, Ht, Σy, fim, ifim, G, tmp)
 end
+
+function SimMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T}, w::Vector{Bool}; diagFIM::Bool=false) where T
+  numCand = size(Ht,2)
+  fim = calculateFIMSim(Σx,Σy,Ht,w)
+  ifim = zeros(T,size(fim,1),size(fim,2))
+  if diagFIM
+    fimDiag = Diagonal(diag(fim))
+    ifim .= inv(fimDiag)
+  else
+    ifim .= inv(fim)
+  end
+
+  G = zeros(T,size(fim,1),size(Ht,3))
+  tmp = zeros(T,size(Ht,3), size(Ht,3))
+
+  return SimMeasurement(w, Ht, Σy, fim, ifim, G, tmp)
+end

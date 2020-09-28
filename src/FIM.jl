@@ -50,6 +50,21 @@ function calculateFIM(Σx::Matrix{T},Σy::Matrix{T},Ht::Array{T,3}, w::Vector{Bo
   return fim
 end
 
+function calculateFIMSim(Σx::Vector{T},Σy::Matrix{T},Ht::Array{T,3}, w::Vector{Bool}) where T
+  fim = inv(diagm(Σx))
+  @showprogress 1 "Calculate FIM..." for i=1:length(w)
+    if w[i]==0
+      continue
+    else
+      # add simultaneously acquired measurements
+      for k=1:size(Ht,3)
+        fim .+= 1.0/Σy[i,k] .* Ht[:,i,k]*adjoint(Ht[:,i,k])
+      end
+    end
+  end
+  return fim
+end
+
 function calculateFIM(Σx::Matrix{T}, Φ::Array{T,3}, Σy::Matrix{T}, Ht::Array{T,3}, w::Vector{Bool}) where T
   nx,ny,nc = size(Φ)
 

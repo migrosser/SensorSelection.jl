@@ -10,6 +10,7 @@ include("SeqMeasurement.jl")
 include("OptSamplingFW.jl")
 include("OptSamplingFWSim.jl")
 include("OptSamplingBW.jl")
+include("OptSamplingBWSim.jl")
 include("OptSamplingBWSeq.jl")
 
 # idea1: approximate IFIMs by diagonal matrices (seems not to work)
