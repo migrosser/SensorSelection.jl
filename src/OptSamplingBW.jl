@@ -1,16 +1,18 @@
 export optSamplingBW!
 
 """
-    `optSampling!(m::Measurement, numSamples::Int64)`
+    `optSamplingBW!(m::Experiment{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand; numericInv::Bool=false) where T`
 
-select sensors such that the estimation of the parameter-vector `x` has minimum uncertainty.
+Iteratively removes the least informative measurements from `m` until only `numSamples`
+measurements remain. This method assumes `m` to be an experiment where all `measurements` in `m.Ht` are performed.
 
 # Arguments:
-* `m::Measurement`            - Measurement object
+* `m::Experiment`             - Experiment object
 * `numSamples::Vector{Int64}` - number of samples
+* `numSimSamp::Int64`         - number of samples to remove per batch
+* `numCand::Int64`            - number candidate measurements to consider per batch
 """
-function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand; numericInv::Bool=false) where T
-  @info "optSamplingBW"
+function optSamplingBW!(m::Experiment{T}, numSamples::Int64, numSimSamp::Int64, numCand::Int64, batch::Int64=numCand; numericInv::Bool=false) where T
   # candidate samples to be removed
   cand = collect(1:size(m.Ht,2))
   # preallocate temporary arrays
@@ -21,7 +23,7 @@ function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64,
   wlog = Int64[]
   @showprogress 1 "Select Sensors..." for i=1:numBatches
     δj .= 0.0
-    removeSamples!(m,cand,tmp,δj,numSimSamp,numCand,wlog,numericInv=numericInv)
+    removeSamples!(m,cand,tmp,δj,numSimSamp,min(numCand, length(cand)),wlog,numericInv=numericInv)
   end
   # remove samples from m.w
   m.w[wlog] .= 0
@@ -29,16 +31,25 @@ function optSamplingBW!(m::Measurement{T}, numSamples::Int64, numSimSamp::Int64,
 end
 
 """
-  `removeSample!(w::Vector{Bool}, cand::Vector{Int64}, fim::Array{Float64,3}, Ht::Array{Float64,3},r::Matrix{Float64})`
+  `removeSamples!(m::Experiment{T}, cand::Vector{Int64},
+                  tmp::Matrix{T}, δj::Vector{T}, numSamp::Int64, 
+                  numCand::Int64,wlog::Vector{Int64}; numericInv::Bool=false) where T`
 
-remove the sample from `cand` which minimizes the trace of the inverse FIM
+remove `numSamp` samples the experiment `m` such that the trace of the inverse FIM is minimized
 (i.e. minimizes uncertainty).
 
 # Arguments:
-* `m::Measurement`         - Measurement object
-* `cand::Vector{Int64}`    - candidate samples
+* `m::Experiment`         - Experiment object
+* `cand::Vector{Int64}`   - candidate samples
+* `tmp::Matrix{T}`        - temporary matrix for intermediate calculations
+* `δj::Vector{T}`         - vector to store the change in uncertainty for each candidate
+* `numSamp::Int64`        - number of measurements to remove
+* `numCand::Int64`        - number of candidate measurements to consider per batch
+* `wlog::Vector{Int64}`   - vector to keep track which measurements are performed
+* (`numericInv::Bool=false`) - if true the FIM is inverted numerically instead of using
+                               the Woodbury Matrix inversion lemma
 """
-function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
+function removeSamples!(m::Experiment{T}, cand::Vector{Int64}
                       , tmp::Matrix{T}
                       , δj::Vector{T}, numSamp::Int64, numCand::Int64,wlog::Vector{Int64}; numericInv::Bool=false) where T
   numComp = length(m.fim)
@@ -61,12 +72,12 @@ function removeSamples!(m::Measurement{T}, cand::Vector{Int64}
 end
 
 """
-  `incIFIM!(δj::Vector{T}, m::Measurement{T}, cand::Vector{Int64}, tmp::Matrix{T}) where T`
+  `incIFIM!(δj::Vector{T}, m::Experiment{T}, cand::Vector{Int64}, tmp::Matrix{T}) where T`
 
 calculate the change in the trace of inverse FIM when removing a sample from the candidate set.
 The results are stored in the first entries of `δj`
 """
-function incIFIM!(δj::Vector{T}, m::Measurement{T}, cand::Vector{Int64}, tmp::Matrix{T}) where T
+function incIFIM!(δj::Vector{T}, m::Experiment{T}, cand::Vector{Int64}, tmp::Matrix{T}) where T
   batch = size(tmp,2)
   nprod = div(length(cand),batch)
   δj .= 0.0
@@ -74,16 +85,21 @@ function incIFIM!(δj::Vector{T}, m::Measurement{T}, cand::Vector{Int64}, tmp::M
     x0 = (j-1)*batch+1
     x1 = j*batch
     δjb = @view δj[x0:x1]
-    incIFIMBatch!(δjb, m.ifim, m.Ht[:,cand[x0:x1],:], m.Σy[x0:x1,:], tmp)
+    incIFIMBatch!(δjb, m.ifim, m.Ht[:,cand[x0:x1],:], m.Σy[cand[x0:x1,:]], tmp)
   end
   if nprod*batch+1 <= length(cand)
     x0 = nprod*batch+1
     x1 = length(cand)
     δjb = @view δj[x0:x1]
-    incIFIMBatch!(δjb, m.ifim, m.Ht[:,cand[x0:x1],:], m.Σy[x0:x1,:], tmp[:,1:x1-x0+1])
+    incIFIMBatch!(δjb, m.ifim, m.Ht[:,cand[x0:x1],:], m.Σy[cand[x0:x1,:]], tmp[:,1:x1-x0+1])
   end
 end
 
+"""
+  `incIFIMBatch!(δ::U, ifim::Vector{Matrix{T}}, Ht::Array{T,3}, Σy::Matrix{T}, tmp::Matrix{T}) where U<:AbstractVector{T} where T`
+
+computes the increase in the trace of the inverse FIM when removing a measurement from the experiment
+""" 
 function incIFIMBatch!(δ::U, ifim::Vector{Matrix{T}}, Ht::Array{T,3}, Σy::Matrix{T}, tmp::Matrix{T}) where U<:AbstractVector{T} where T
   # add contributions for all components
   for k=1:length(ifim)
@@ -92,7 +108,13 @@ function incIFIMBatch!(δ::U, ifim::Vector{Matrix{T}}, Ht::Array{T,3}, Σy::Matr
   end
 end
 
-function removeSample!(m::Measurement{T}, cand::Vector{Int64},idx::Int64
+"""
+  `removeSample!(m::Experiment{T}, cand::Vector{Int64},idx::Int64 ,p::Vector{Int64},tmp::Vector{T}
+                ,wlog::Vector{Int64}; numericInv::Bool=false) where T`
+
+removes the measurement with idx `idx` from the experiment `m`.
+"""
+function removeSample!(m::Experiment{T}, cand::Vector{Int64},idx::Int64
                       ,p::Vector{Int64},tmp::Vector{T}
                       ,wlog::Vector{Int64}; numericInv::Bool=false) where T
   numComp = length(m.fim)

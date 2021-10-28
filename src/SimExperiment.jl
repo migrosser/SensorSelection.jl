@@ -1,4 +1,4 @@
-export SimMeasurement
+export SimExperiment
 
 """
   data structure describing a measurement
@@ -10,7 +10,7 @@ export SimMeasurement
   * `fim::Array{T,2}` - Array containing the FIM
   * `fim::Hermitian{T,Array{T,2}}` - Array containing the inverse FIM
 """
-mutable struct SimMeasurement{T}
+mutable struct SimExperiment{T}
   w::Vector{Bool}
   Ht::Array{T,3}
   Σy::Matrix{T}
@@ -20,7 +20,7 @@ mutable struct SimMeasurement{T}
   tmp::Matrix{T}
 end
 
-function SimMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, fim::Array{T,2}; diagFIM::Bool=false) where T
+function SimExperiment(Ht::Array{T,3}, Σy::Matrix{T}, fim::Array{T,2}; diagFIM::Bool=false) where T
   numCand = size(Ht,2)
   w = zeros(Bool,numCand)
   ifim = zeros(T,size(fim,1),size(fim,2))
@@ -34,10 +34,10 @@ function SimMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, fim::Array{T,2}; diagFIM
   G = zeros(T,size(fim,1),size(Ht,3))
   tmp = zeros(T,size(Ht,3), size(Ht,3))
 
-  return SimMeasurement(w, Ht, Σy, fim, ifim, G, tmp)
+  return SimExperiment(w, Ht, Σy, fim, ifim, G, tmp)
 end
 
-function SimMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T}; diagFIM::Bool=false) where T
+function SimExperiment(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T}; diagFIM::Bool=false) where T
   numCand = size(Ht,2)
   w = zeros(Bool,numCand)
   fim = initFIM(reshape(Σx,:,1))[1]
@@ -52,10 +52,10 @@ function SimMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T}; diagFIM:
   G = zeros(T,size(fim,1),size(Ht,3))
   tmp = zeros(T,size(Ht,3), size(Ht,3))
 
-  return SimMeasurement(w, Ht, Σy, fim, ifim, G, tmp)
+  return SimExperiment(w, Ht, Σy, fim, ifim, G, tmp)
 end
 
-function SimMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T}, w::Vector{Bool}; diagFIM::Bool=false) where T
+function SimExperiment(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T}, w::Vector{Bool}; diagFIM::Bool=false) where T
   numCand = size(Ht,2)
   fim = calculateFIMSim(Σx,Σy,Ht,w)
   ifim = zeros(T,size(fim,1),size(fim,2))
@@ -69,5 +69,5 @@ function SimMeasurement(Ht::Array{T,3}, Σy::Matrix{T}, Σx::Vector{T}, w::Vecto
   G = zeros(T,size(fim,1),size(Ht,3))
   tmp = zeros(T,size(Ht,3), size(Ht,3))
 
-  return SimMeasurement(w, Ht, Σy, fim, ifim, G, tmp)
+  return SimExperiment(w, Ht, Σy, fim, ifim, G, tmp)
 end
