@@ -24,7 +24,7 @@ This packags provides implementations of the greedy algorithms for the solution 
 Install SensorSelection.jl within julia using
 ```julia
 import Pkg
-Pkg.clone("git@github.com:migrosser/SensorSelection.jl")
+Pkg.add("https://github.com/migrosser/SensorSelection.jl")
 ```
 
 ## Example
